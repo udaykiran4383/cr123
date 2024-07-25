@@ -82,12 +82,9 @@ class SubmitFormView(View):
         new_college = data.get('new_college')
         year_of_study = data.get('year_of_study')
 
-        print(f"Received data: {data}")
-
         if new_college:
             college, created = College.objects.get_or_create(name=new_college)
             if created:
-                print(f"New college created: {new_college}")
                 self.update_json_file(state, district, new_college)
             else:
                 print(f"New college not created, already exists: {new_college}")
@@ -103,23 +100,20 @@ class SubmitFormView(View):
             year_of_study=year_of_study
         )
 
-        return JsonResponse({"message": "Form submitted successfully."})
+        return JsonResponse({"message": "Form submitted successfully.", 'status': 'true'})
 
     def update_json_file(self, state, district, new_college):
         file_path = os.path.join(settings.BASE_DIR, 'static/states_districts.json')
-        print(f"Updating JSON file at: {file_path}")
         
         with open(file_path, 'r+') as f:
             data = json.load(f)
             state_data = next((s for s in data['states'] if s['state'] == state), None)
             if state_data:
-                print(f"Found state: {state}")
                 district_data = next((d for d in state_data['districts'] if d['name'] == district), None)
                 if district_data:
                     print(f"Found district: {district}")
                     if new_college not in district_data['colleges']:
                         district_data['colleges'].append(new_college)
-                        print(f"Added new college to district: {new_college}")
                     else:
                         print(f"College already exists in district: {new_college}")
             else:
@@ -127,4 +121,3 @@ class SubmitFormView(View):
             f.seek(0)
             json.dump(data, f, indent=4)
             f.truncate()
-            print("JSON file updated.")
