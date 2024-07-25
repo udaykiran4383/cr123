@@ -1,5 +1,3 @@
-# views.py
-
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.http import JsonResponse
@@ -10,7 +8,15 @@ from django.views import View
 import os    
 from django.utils.decorators import method_decorator
 from django.shortcuts import get_object_or_404
-from .models import UserProfile,College
+from .models import UserProfile, College
+from django.views import View
+from django.http import JsonResponse
+from django.utils.decorators import method_decorator
+from django.views.decorators.csrf import csrf_exempt
+import json
+import os
+from django.conf import settings
+from .models import College, UserProfile
 
 
 @csrf_exempt
@@ -18,26 +24,19 @@ def google_login(request):
     if request.method == 'POST':
         data = json.loads(request.body)
         token = data.get('token')
-        # token = request.data.get('token')
 
-    # Verify token with Google
     try:
-        # Send token to Google for verification
         url = 'https://oauth2.googleapis.com/tokeninfo?id_token=' + token
         response = requests.get(url)
 
         if response.status_code == 200:
-            # Token is valid, extract user information
             user_info = response.json()
             email = user_info.get('email')
-            # Check if user with this email exists in your database
             User = get_user_model()
             user, created = User.objects.get_or_create(email=email)
 
-            # Optionally, you can return user data or success message
             return JsonResponse({'message': 'Google login successful', 'user': user.email, 'newCreated': created})
         else:
-            # Token verification failed
             return JsonResponse({'error': 'Invalid token'}, status=400)
 
     except Exception as e:
@@ -70,7 +69,22 @@ class GetCollegesView(View):
                 return JsonResponse(district_data['colleges'], safe=False)
         return JsonResponse([], safe=False)
 
-@method_decorator(csrf_exempt, name='dispatch')    
+class GetSchoolsView(View):
+    def get(self, request, state_name, district_name):
+        file_path = os.path.join(settings.BASE_DIR, 'static/states_districts.json')
+        with open(file_path) as f:
+            data = json.load(f)
+
+        state_data = next((state for state in data['states'] if state['state'] == state_name), None)
+        if state_data:
+            district_data = next((district for district in state_data['districts'] if district['name'] == district_name), None)
+            if district_data:
+                return JsonResponse(district_data['schools'], safe=False)
+        return JsonResponse([], safe=False)
+
+
+
+@method_decorator(csrf_exempt, name='dispatch')
 class SubmitFormView(View):
     def post(self, request):
         data = json.loads(request.body)
@@ -79,45 +93,67 @@ class SubmitFormView(View):
         state = data.get('state')
         district = data.get('district')
         college_name = data.get('college')
+        school_name = data.get('school')
         new_college = data.get('new_college')
+        new_school = data.get('new_school')
         year_of_study = data.get('year_of_study')
+        representative_type = data.get('representative_type')
 
-        if new_college:
+        if representative_type == 'college' and new_college:
             college, created = College.objects.get_or_create(name=new_college)
             if created:
-                self.update_json_file(state, district, new_college)
+                self.update_json_file(state, district, new_college, 'college')
             else:
                 print(f"New college not created, already exists: {new_college}")
-        else:
-            college = get_object_or_404(College, name=college_name)
+        elif representative_type == 'school' and new_school:
+            self.update_json_file(state, district, new_school, 'school')
 
-        user = UserProfile.objects.create(
+        UserProfile.objects.create(
             name=name,
             phone=phone,
             state=state,
             district=district,
-            college=college,
-            year_of_study=year_of_study
+            college=new_college if representative_type == 'college' else college_name,
+            school=new_school if representative_type == 'school' else school_name,
+            year_of_study=year_of_study,
+            representative_type=representative_type
         )
 
         return JsonResponse({"message": "Form submitted successfully.", 'status': 'true'})
 
-    def update_json_file(self, state, district, new_college):
+    def update_json_file(self, state, district, new_entry, entry_type):
         file_path = os.path.join(settings.BASE_DIR, 'static/states_districts.json')
-        
+
+        print(f"Updating JSON file: state={state}, district={district}, new_entry={new_entry}, entry_type={entry_type}")
+
         with open(file_path, 'r+') as f:
             data = json.load(f)
             state_data = next((s for s in data['states'] if s['state'] == state), None)
-            if state_data:
-                district_data = next((d for d in state_data['districts'] if d['name'] == district), None)
-                if district_data:
-                    print(f"Found district: {district}")
-                    if new_college not in district_data['colleges']:
-                        district_data['colleges'].append(new_college)
-                    else:
-                        print(f"College already exists in district: {new_college}")
-            else:
+
+            if not state_data:
                 print(f"State not found: {state}")
+                return
+
+            district_data = next((d for d in state_data['districts'] if d['name'] == district), None)
+            if not district_data:
+                print(f"District not found: {district}")
+                return
+
+            if entry_type == 'college':
+                if new_entry not in district_data['colleges']:
+                    print(f"Adding new college: {new_entry}")
+                    district_data['colleges'].append(new_entry)
+                else:
+                    print(f"College already exists: {new_entry}")
+            elif entry_type == 'school':
+                if new_entry not in district_data['schools']:
+                    print(f"Adding new school: {new_entry}")
+                    district_data['schools'].append(new_entry)
+                else:
+                    print(f"School already exists: {new_entry}")
+
+            # Write updated data back to the file
             f.seek(0)
             json.dump(data, f, indent=4)
             f.truncate()
+            print("JSON file updated successfully")
