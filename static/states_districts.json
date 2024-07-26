@@ -5,11 +5,9 @@
             "districts": [
                 {
                     "name": "Anantapur",
-                    "colleges": [
-                        
-                    ],
+                    "colleges": [],
                     "schools": [
-                      
+                        "uday1"
                     ]
                 },
                 {
